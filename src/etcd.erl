@@ -35,7 +35,7 @@ stop() ->
 -spec set(url(), key(), value(), pos_timeout()) -> result().
 set(Url, Key, Value, Timeout) ->
     FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
-    Result = post_request(FullUrl, [{"value", Value}], Timeout),
+    Result = put_request(FullUrl, [{"value", Value}], Timeout),
     handle_request_result(Result).
 
 %% @spec (Url, Key, Value, TTL, Timeout) -> Result
@@ -49,7 +49,7 @@ set(Url, Key, Value, Timeout) ->
 -spec set(url(), key(), value(), pos_integer(), pos_timeout()) -> result().
 set(Url, Key, Value, TTL, Timeout) ->
     FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
-    Result = post_request(FullUrl, [{"value", Value}, {"ttl", TTL}], Timeout),
+    Result = put_request(FullUrl, [{"value", Value}, {"ttl", TTL}], Timeout),
     handle_request_result(Result).
 
 %% @spec (Url, Key, PrevValue, Value, Timeout) -> Result
@@ -160,13 +160,18 @@ encode_params(Pairs) ->
 
 %% @private
 url_prefix(Url) ->
-    Url ++ "/v1".
+    Url ++ "/v2".
 
 %% @private
+put_request(Url, Pairs, Timeout) ->
+    do_request(put, Url, Pairs, Timeout).
 post_request(Url, Pairs, Timeout) ->
+    do_request(post, Url, Pairs, Timeout).
+
+do_request(Method, Url, Pairs, Timeout) ->
     Body = encode_params(Pairs),
     Headers = [{"Content-Type", "application/x-www-form-urlencoded"}],
-    lhttpc:request(Url, post, Headers, Body, Timeout).
+    lhttpc:request(Url, Method, Headers, Body, Timeout).
 
 %% @private
 parse_response(Decoded) when is_list(Decoded) ->
@@ -185,11 +190,11 @@ parse_response(Decoded) when is_tuple(Decoded) ->
 parse_response_inner(Pairs) ->
     {_, Action} = lists:keyfind(<<"action">>, 1, Pairs),
     case Action of
-        <<"SET">> ->
+        <<"set">> ->
             parse_set_response(Pairs, #set{});
-        <<"GET">> ->
+        <<"get">> ->
             parse_get_response(Pairs, #get{});
-        <<"DELETE">> ->
+        <<"delete">> ->
             parse_delete_response(Pairs, #delete{})
     end.
 
@@ -208,25 +213,40 @@ parse_error_response([Pair | Tail], Acc) ->
     end.
 
 %% @private
+parse_node_response(Response) ->
+    parse_node_response(Response, #node{}).
+parse_node_response([], Acc) ->
+    Acc;
+parse_node_response([Pair | Tail], #node{} = Acc) ->
+    case Pair of
+        {<<"key">>, Key} ->
+            parse_node_response(Tail, Acc#node{key = Key});
+        {<<"value">>, Value} ->
+            parse_node_response(Tail, Acc#node{value = Value});
+        {<<"modifiedIndex">>, Index} ->
+            parse_node_response(Tail, Acc#node{modifiedIndex = Index});
+        {<<"createdIndex">>, Index} ->
+            parse_node_response(Tail, Acc#node{createdIndex = Index});
+        _ ->
+            parse_node_response(Tail, Acc)
+    end.
+
+
 parse_set_response([], Acc) ->
     Acc;
 parse_set_response([Pair | Tail], Acc) ->
-    {_, Key, Value, PrevValue, NewKey, Expiration, TTL, Index} = Acc,
     case Pair of
-        {<<"key">>, Key1} ->
-            parse_set_response(Tail, {set, Key1, Value, PrevValue, NewKey, Expiration, TTL, Index});
-        {<<"value">>, Value1} ->
-            parse_set_response(Tail, {set, Key, Value1, PrevValue, NewKey, Expiration, TTL, Index});
-        {<<"prevValue">>, PrevValue1} ->
-            parse_set_response(Tail, {set, Key, Value, PrevValue1, NewKey, Expiration, TTL, Index});
-        {<<"newKey">>, NewKey1} ->
-            parse_set_response(Tail, {set, Key, Value, PrevValue, NewKey1, Expiration, TTL, Index});
-        {<<"expiration">>, Expiration1} ->
-            parse_set_response(Tail, {set, Key, Value, PrevValue, NewKey, Expiration1, TTL, Index});
-        {<<"ttl">>, TTL1} ->
-            parse_set_response(Tail, {set, Key, Value, PrevValue, NewKey, Expiration, TTL1, Index});
-        {<<"index">>, Index1} ->
-            parse_set_response(Tail, {set, Key, Value, PrevValue, NewKey, Expiration, TTL, Index1});
+        {<<"node">>, {NodePairs}} ->
+            N = parse_node_response(NodePairs),
+            parse_set_response(Tail, Acc#set{key = N#node.key,
+                                             value = N#node.value,
+                                             newKey = true,
+                                             index = N#node.modifiedIndex});
+        {<<"prevNode">>, {NodePairs}} ->
+            N = parse_node_response(NodePairs),
+            parse_set_response(Tail, Acc#set{key = N#node.key,
+                                             prevValue = N#node.value,
+                                             newKey = false});
         _ ->
             parse_set_response(Tail, Acc)
     end.
@@ -235,16 +255,12 @@ parse_set_response([Pair | Tail], Acc) ->
 parse_get_response([], Acc) ->
     Acc;
 parse_get_response([Pair | Tail], Acc) ->
-    {_, Key, Value, Dir, Index} = Acc,
     case Pair of
-        {<<"key">>, Key1} ->
-            parse_get_response(Tail, {get, Key1, Value, Dir, Index});
-        {<<"value">>, Value1} ->
-            parse_get_response(Tail, {get, Key, Value1, Dir, Index});
-        {<<"dir">>, Dir1} ->
-            parse_get_response(Tail, {get, Key, Value, Dir1, Index});
-        {<<"index">>, Index1} ->
-            parse_get_response(Tail, {get, Key, Value, Dir, Index1});
+        {<<"node">>, {NodePairs}} ->
+            N = parse_node_response(NodePairs),
+            parse_get_response(Tail, Acc#get{key = N#node.key,
+                                             value = N#node.value,
+                                             index = N#node.modifiedIndex});
         _ ->
             parse_get_response(Tail, Acc)
     end.
@@ -253,14 +269,14 @@ parse_get_response([Pair | Tail], Acc) ->
 parse_delete_response([], Acc) ->
     Acc;
 parse_delete_response([Pair | Tail], Acc) ->
-    {_, Key, PrevValue, Index} = Acc,
     case Pair of
-        {<<"key">>, Key1} ->
-            parse_delete_response(Tail, {delete, Key1, PrevValue, Index});
-        {<<"prevValue">>, PrevValue1} ->
-            parse_delete_response(Tail, {delete, Key, PrevValue1, Index});
-        {<<"index">>, Index1} ->
-            parse_delete_response(Tail, {delete, Key, PrevValue, Index1});
+        {<<"node">>, {NodePairs}} ->
+            N = parse_node_response(NodePairs),
+            parse_delete_response(Tail, Acc#delete{key = N#node.key,
+                                                   index = N#node.modifiedIndex});
+        {<<"prevNode">>, {NodePairs}} ->
+            N = parse_node_response(NodePairs),
+            parse_delete_response(Tail, Acc#delete{prevValue = N#node.value});
         _ ->
             parse_delete_response(Tail, Acc)
     end.

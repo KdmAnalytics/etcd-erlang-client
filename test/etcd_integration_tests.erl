@@ -4,11 +4,14 @@
 
 set_test() ->
     etcd:start(),
-    Result1 = etcd:set(?URL, "/file", "contents", infinity),
-    ?assertMatch({ok, {set, <<"/file">>, <<"contents">>, undefined, true, undefined, undefined, _}}, Result1),
-    Result2 = etcd:set(?URL, "/file", "new contents", infinity),
-    ?assertMatch({ok, {set, <<"/file">>, <<"new contents">>, <<"contents">>, false, undefined, undefined, _}}, Result2),
-    etcd:delete(?URL, "/file", infinity).
+    try
+        Result1 = etcd:set(?URL, "/file", "contents", infinity),
+        ?assertMatch({ok, {set, <<"/file">>, <<"contents">>, undefined, true, undefined, undefined, _}}, Result1),
+        Result2 = etcd:set(?URL, "/file", "new contents", infinity),
+        ?assertMatch({ok, {set, <<"/file">>, <<"new contents">>, <<"contents">>, false, undefined, undefined, _}}, Result2)
+    after
+        etcd:delete(?URL, "/file", infinity)
+    end.
 
 test_and_set_test() ->
     etcd:start(),
@@ -29,10 +32,13 @@ delete_test() ->
 
 get_test() ->
     etcd:start(),
-    etcd:set(?URL, "/file", "contents", infinity),
-    Result1 = etcd:get(?URL, "/file", infinity),
-    ?assertMatch({ok, {get, <<"/file">>, <<"contents">>, false, _}}, Result1),
-    etcd:delete(?URL, "/file", infinity).
+    try
+        etcd:set(?URL, "/file", "contents", infinity),
+        Result1 = etcd:get(?URL, "/file", infinity),
+        ?assertMatch({ok, {get, <<"/file">>, <<"contents">>, false, _}}, Result1)
+    after
+        etcd:delete(?URL, "/file", infinity)
+    end.
 
 get_prefix_test() ->
     etcd:start(),

@@ -3,6 +3,12 @@
           message :: binary(),
           cause :: binary()
          }).
+-record(node, {
+          key :: binary(),
+          value :: binary(),
+          modifiedIndex :: integer(),
+          createdIndex :: integer()
+         }).
 -record(set, {
           key :: binary(),
           value :: binary(),
