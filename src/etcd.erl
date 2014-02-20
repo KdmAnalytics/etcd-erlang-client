@@ -63,7 +63,7 @@ set(Url, Key, Value, TTL, Timeout) ->
 -spec test_and_set(url(), key(), value(), value(), pos_timeout()) -> result().
 test_and_set(Url, Key, PrevValue, Value, Timeout) ->
     FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
-    Result = post_request(FullUrl, [{"value", Value}, {"prevValue", PrevValue}], Timeout),
+    Result = put_request(FullUrl, [{"value", Value}, {"prevValue", PrevValue}], Timeout),
     handle_request_result(Result).
 
 %% @spec (Url, Key, PrevValue, Value, TTL, Timeout) -> Result
@@ -78,7 +78,7 @@ test_and_set(Url, Key, PrevValue, Value, Timeout) ->
 -spec test_and_set(url(), key(), value(), value(), pos_integer(), pos_timeout()) -> result().
 test_and_set(Url, Key, PrevValue, Value, TTL, Timeout) ->
     FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
-    Result = post_request(FullUrl, [{"value", Value}, {"prevValue", PrevValue}, {"ttl", TTL}], Timeout),
+    Result = put_request(FullUrl, [{"value", Value}, {"prevValue", PrevValue}, {"ttl", TTL}], Timeout),
     handle_request_result(Result).
 
 %% @spec (Url, Key, Timeout) -> Result
@@ -190,7 +190,8 @@ parse_response(Decoded) when is_tuple(Decoded) ->
 parse_response_inner(Pairs) ->
     {_, Action} = lists:keyfind(<<"action">>, 1, Pairs),
     case Action of
-        <<"set">> ->
+        Action when Action =:= <<"set">>;
+                    Action =:= <<"compareAndSwap">> ->
             parse_set_response(Pairs, #set{});
         <<"get">> ->
             parse_get_response(Pairs, #get{});

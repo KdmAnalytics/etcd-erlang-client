@@ -15,12 +15,15 @@ set_test() ->
 
 test_and_set_test() ->
     etcd:start(),
-    etcd:set(?URL, "/file", "contents", infinity),
-    Result1 = etcd:test_and_set(?URL, "/file", "contents", "new contents", infinity),
-    ?assertMatch({ok, {set, <<"/file">>, <<"new contents">>, <<"contents">>, false, undefined, undefined, _}}, Result1),
-    Result2 = etcd:test_and_set(?URL, "/file", "abracadabra", "very new contents", infinity),
-    ?assertMatch({ok, {error, 101, _, _}}, Result2), % "The given PrevValue is not equal to the value of the key"
-    etcd:delete(?URL, "/file", infinity).
+    try
+        etcd:set(?URL, "/file", "contents", infinity),
+        Result1 = etcd:test_and_set(?URL, "/file", "contents", "new contents", infinity),
+        ?assertMatch({ok, {set, <<"/file">>, <<"new contents">>, <<"contents">>, false, undefined, undefined, _}}, Result1),
+        Result2 = etcd:test_and_set(?URL, "/file", "abracadabra", "very new contents", infinity),
+        ?assertMatch({ok, {error, 101, _, _}}, Result2) % "The given PrevValue is not equal to the value of the key"
+    after
+        etcd:delete(?URL, "/file", infinity)
+    end.
 
 delete_test() ->
     etcd:start(),
