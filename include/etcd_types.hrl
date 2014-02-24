@@ -6,6 +6,8 @@
 -record(node, {
           key :: binary(),
           value :: binary(),
+          dir = false :: boolean(),
+          nodes = [] :: [#node{}],
           modifiedIndex :: integer(),
           createdIndex :: integer()
          }).
@@ -22,6 +24,7 @@
           key :: binary(),
           value :: binary(),
           dir = false :: boolean(),
+          nodes = [] :: [#node{}],
           index :: integer()
          }).
 -record(delete, {

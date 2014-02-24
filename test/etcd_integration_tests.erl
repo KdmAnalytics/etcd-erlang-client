@@ -1,5 +1,8 @@
 -module(etcd_integration_tests).
+
+-include("etcd_types.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
 -define(URL, "http://localhost:4001").
 
 set_test() ->
@@ -38,43 +41,59 @@ get_test() ->
     try
         etcd:set(?URL, "/file", "contents", infinity),
         Result1 = etcd:get(?URL, "/file", infinity),
-        ?assertMatch({ok, {get, <<"/file">>, <<"contents">>, false, _}}, Result1)
+        ?assertMatch(
+            {ok, #get{key = <<"/file">>, value = <<"contents">>, dir = false}},
+            Result1)
     after
         etcd:delete(?URL, "/file", infinity)
     end.
 
 get_prefix_test() ->
     etcd:start(),
-    etcd:set(?URL, "/dir/file1", "file1 contents", infinity),
-    etcd:set(?URL, "/dir/file2", "file2 contents", infinity),
-    Result1 = etcd:get(?URL, "/dir", infinity),
-    ?assertMatch({ok, [{get, <<"/dir/file1">>, <<"file1 contents">>, false, _}, {get, <<"/dir/file2">>, <<"file2 contents">>, false, _}]}, Result1),
-    etcd:delete(?URL, "/dir/file1", infinity),
-    etcd:delete(?URL, "/dir/file2", infinity).
+    try
+        etcd:set(?URL, "/dir/file1", "file1 contents", infinity),
+        etcd:set(?URL, "/dir/file2", "file2 contents", infinity),
+        Result1 = etcd:get(?URL, "/dir", infinity),
+        ?assertMatch({ok, #get{key = <<"/dir">>, dir = true}}, Result1),
+        ?assertMatch(
+            [#node{key = <<"/dir/file1">>, value = <<"file1 contents">>, dir = false},
+             #node{key = <<"/dir/file2">>, value = <<"file2 contents">>, dir = false}],
+            (element(2, Result1))#get.nodes)
+    after
+        etcd:delete(?URL, "/dir/file1", infinity),
+        etcd:delete(?URL, "/dir/file2", infinity)
+    end.
 
 watch_test() ->
     etcd:start(),
-    Self = self(),
-    spawn(fun() ->
-                  Result = etcd:watch(?URL, "/dir", infinity),
-                  Self ! Result
-          end),
-    timer:sleep(5),
-    etcd:set(?URL, "/dir/file", "contents", infinity),
-    receive
-        Result ->
-            ?assertMatch({ok, {set, <<"/dir/file">>, <<"contents">>, undefined, true, undefined, undefined, _}}, Result)
-    end,
-    etcd:delete(?URL, "/dir/file", infinity).
+    try
+        Self = self(),
+        spawn(fun() ->
+                      Result = etcd:watch(?URL, "/dir", infinity),
+                      error_logger:info_msg("watch result ~p~n", [Result]),
+                      Self ! Result
+              end),
+        timer:sleep(500),
+        etcd:set(?URL, "/dir/file", "contents", infinity),
+        receive
+            Result ->
+                ?assertMatch({ok, {set, <<"/dir/file">>, <<"contents">>, undefined, true, undefined, undefined, _}}, Result)
+        end
+    after
+        etcd:delete(?URL, "/dir/file", infinity)
+    end.
 
 watch_index_test() ->
     etcd:start(),
-    Result1 = etcd:set(?URL, "/dir/file", "contents", infinity),
-    ?assertMatch({ok, {set, <<"/dir/file">>, <<"contents">>, undefined, true, undefined, undefined, _}}, Result1),
-    {_, {_, _, _, _, _, _, _, Index}} = Result1,
-    Result2 = etcd:watch(?URL, "/dir", Index, infinity),
-    ?assertEqual(Result1, Result2),
-    etcd:delete(?URL, "/dir/file", infinity).
+    try
+        Result1 = etcd:set(?URL, "/dir/file", "contents", infinity),
+        ?assertMatch({ok, {set, <<"/dir/file">>, <<"contents">>, undefined, true, undefined, undefined, _}}, Result1),
+        {_, {_, _, _, _, _, _, _, Index}} = Result1,
+        Result2 = etcd:watch(?URL, "/dir", Index, infinity),
+        ?assertEqual(Result1, Result2)
+    after
+        etcd:delete(?URL, "/dir/file", infinity)
+    end.
 
 sadd_test() ->
     etcd:start(),

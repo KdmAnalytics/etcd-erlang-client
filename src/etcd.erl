@@ -113,7 +113,8 @@ delete(Url, Key, Timeout) ->
 %% @end
 -spec watch(url(), key(), pos_timeout()) -> result().
 watch(Url, Key, Timeout) ->
-    FullUrl = url_prefix(Url) ++ "/watch" ++ convert_to_string(Key),
+    FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key) ++
+                "?wait=true&recursive=true",
     Result = lhttpc:request(FullUrl, get, [], Timeout),
     handle_request_result(Result).
 
@@ -126,8 +127,9 @@ watch(Url, Key, Timeout) ->
 %% @end
 -spec watch(url(), key(), pos_integer(), pos_timeout()) -> result().
 watch(Url, Key, Index, Timeout) ->
-    FullUrl = url_prefix(Url) ++ "/watch" ++ convert_to_string(Key),
-    Result = post_request(FullUrl, [{"index", Index}], Timeout),
+    FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key) ++
+                "?wait=true&recursive=true&waitIndex=" ++ convert_to_string(Index),
+    Result = lhttpc:request(FullUrl, get, [], Timeout),
     handle_request_result(Result).
 
 -spec sadd(url(), key(), value(), pos_timeout()) -> ok | {error, any()}.
@@ -222,6 +224,11 @@ parse_node_response([Pair | Tail], #node{} = Acc) ->
     case Pair of
         {<<"key">>, Key} ->
             parse_node_response(Tail, Acc#node{key = Key});
+        {<<"dir">>, IsDir} when is_boolean(IsDir) ->
+            parse_node_response(Tail, Acc#node{dir = IsDir});
+        {<<"nodes">>, Nodes} ->
+            parse_node_response(Tail,
+                Acc#node{nodes = [ parse_node_response(N) || {N} <- Nodes ]});
         {<<"value">>, Value} ->
             parse_node_response(Tail, Acc#node{value = Value});
         {<<"modifiedIndex">>, Index} ->
@@ -260,6 +267,8 @@ parse_get_response([Pair | Tail], Acc) ->
         {<<"node">>, {NodePairs}} ->
             N = parse_node_response(NodePairs),
             parse_get_response(Tail, Acc#get{key = N#node.key,
+                                             dir = N#node.dir,
+                                             nodes = N#node.nodes,
                                              value = N#node.value,
                                              index = N#node.modifiedIndex});
         _ ->
