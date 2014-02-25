@@ -167,8 +167,6 @@ url_prefix(Url) ->
 %% @private
 put_request(Url, Pairs, Timeout) ->
     do_request(put, Url, Pairs, Timeout).
-post_request(Url, Pairs, Timeout) ->
-    do_request(post, Url, Pairs, Timeout).
 
 do_request(Method, Url, Pairs, Timeout) ->
     Body = encode_params(Pairs),
