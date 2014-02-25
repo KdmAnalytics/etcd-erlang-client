@@ -70,7 +70,6 @@ watch_test() ->
         Self = self(),
         spawn(fun() ->
                       Result = etcd:watch(?URL, "/dir", infinity),
-                      error_logger:info_msg("watch result ~p~n", [Result]),
                       Self ! Result
               end),
         timer:sleep(500),
