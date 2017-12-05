@@ -195,6 +195,8 @@ parse_response_inner(Pairs) ->
             parse_set_response(Pairs, #set{});
         <<"get">> ->
             parse_get_response(Pairs, #get{});
+        <<"expire">> ->
+            parse_delete_response(Pairs, #delete{});
         <<"delete">> ->
             parse_delete_response(Pairs, #delete{})
     end.
