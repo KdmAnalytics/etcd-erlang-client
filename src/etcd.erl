@@ -50,6 +50,7 @@ set(Url, Key, Value, Timeout) ->
 set(Url, Key, Value, TTL, Timeout) ->
     FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
     Result = put_request(FullUrl, [{"value", Value}, {"ttl", TTL}], Timeout),
+%%    io:format("~p~n~p~n", [FullUrl, Result]),
     handle_request_result(Result).
 
 %% @spec (Url, Key, PrevValue, Value, Timeout) -> Result
@@ -294,10 +295,10 @@ parse_delete_response([Pair | Tail], Acc) ->
 %% @private
 handle_request_result(Result) ->
     case Result of
-        {ok, {{_StatusCode, _ReasonPhrase}, _Hdrs, ResponseBody}} ->
-            Decoded = jiffy:decode(ResponseBody),
+        {ok, {{Code, _ReasonPhrase}, _Hdrs, ResponseBody}} when Code < <<"300">> ->
+            Decoded = jsx:decode(ResponseBody),
             {ok, parse_response(Decoded)};
-        {error, Reason} ->
+        {_, Reason} ->
             {http_error, Reason}
     end.
 
