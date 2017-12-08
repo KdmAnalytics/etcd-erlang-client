@@ -8,7 +8,7 @@
 -export([watch/3, watch/4]).
 -export([sadd/4, sadd/5, sdel/4, sismember/4, smembers/3]).
 
--include("include/etcd_types.hrl").
+-include("etcd_types.hrl").
 
 %% @doc Start application with all depencies
 -spec start() -> ok | {error, term()}.
@@ -175,10 +175,7 @@ do_request(Method, Url, Pairs, Timeout) ->
     lhttpc:request(Url, Method, Headers, Body, Timeout).
 
 %% @private
-parse_response(Decoded) when is_list(Decoded) ->
-    [ parse_response_inner(Pairs) || {Pairs} <- Decoded ];
-parse_response(Decoded) when is_tuple(Decoded) ->
-    {Pairs} = Decoded,
+parse_response(Pairs) when is_list(Pairs) ->
     IsError = lists:keyfind(<<"errorCode">>, 1, Pairs),
     case IsError of
         {_, ErrorCode} ->
@@ -245,13 +242,13 @@ parse_set_response([], Acc) ->
     Acc;
 parse_set_response([Pair | Tail], Acc) ->
     case Pair of
-        {<<"node">>, {NodePairs}} ->
+        {<<"node">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_set_response(Tail, Acc#set{key = N#node.key,
                                              value = N#node.value,
                                              newKey = true,
                                              index = N#node.modifiedIndex});
-        {<<"prevNode">>, {NodePairs}} ->
+        {<<"prevNode">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_set_response(Tail, Acc#set{key = N#node.key,
                                              prevValue = N#node.value,
@@ -265,7 +262,7 @@ parse_get_response([], Acc) ->
     Acc;
 parse_get_response([Pair | Tail], Acc) ->
     case Pair of
-        {<<"node">>, {NodePairs}} ->
+        {<<"node">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_get_response(Tail, Acc#get{key = N#node.key,
                                              dir = N#node.dir,
@@ -281,11 +278,11 @@ parse_delete_response([], Acc) ->
     Acc;
 parse_delete_response([Pair | Tail], Acc) ->
     case Pair of
-        {<<"node">>, {NodePairs}} ->
+        {<<"node">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_delete_response(Tail, Acc#delete{key = N#node.key,
                                                    index = N#node.modifiedIndex});
-        {<<"prevNode">>, {NodePairs}} ->
+        {<<"prevNode">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_delete_response(Tail, Acc#delete{prevValue = N#node.value});
         _ ->
