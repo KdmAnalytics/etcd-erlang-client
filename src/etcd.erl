@@ -3,11 +3,11 @@
 -export([start/0, stop/0]).
 -export([set/4, set/5]).
 -export([test_and_set/5, test_and_set/6]).
--export([get/3]).
+-export([get/3, ls/3]).
 -export([delete/3]).
 -export([watch/3, watch/4]).
 -export([sadd/4, sadd/5, sdel/4, sismember/4, smembers/3]).
-
+-compile(export_all).
 -include("etcd_types.hrl").
 
 %% @doc Start application with all depencies
@@ -104,6 +104,11 @@ get(Url, Key, Timeout) ->
 delete(Url, Key, Timeout) ->
     FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
     Result = lhttpc:request(FullUrl, delete, [], Timeout),
+    handle_request_result(Result).
+
+ls(Url, Key, Timeout) ->
+    FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key) ++ "?quorum=false&recursive=true&sorted=false",
+    Result = lhttpc:request(FullUrl, get, [], Timeout),
     handle_request_result(Result).
 
 %% @spec (Url, Key, Timeout) -> Result
@@ -226,7 +231,7 @@ parse_node_response([Pair | Tail], #node{} = Acc) ->
             parse_node_response(Tail, Acc#node{dir = IsDir});
         {<<"nodes">>, Nodes} ->
             parse_node_response(Tail,
-                Acc#node{nodes = [ parse_node_response(N) || {N} <- Nodes ]});
+                Acc#node{nodes = [ parse_node_response(N) || N <- Nodes ]});
         {<<"value">>, Value} ->
             parse_node_response(Tail, Acc#node{value = Value});
         {<<"modifiedIndex">>, Index} ->

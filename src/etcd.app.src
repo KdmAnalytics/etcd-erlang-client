@@ -7,7 +7,7 @@
                   kernel,
                   stdlib,
                   lhttpc,
-                  jiffy
+                  jsx
                  ]},
   {mod, { etcd_app, []}},
   {env, []}
