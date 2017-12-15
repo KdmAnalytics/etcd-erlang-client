@@ -1,14 +1,14 @@
 -module(etcd).
 
 -export([start/0, stop/0]).
--export([set/4, set/5]).
+-export([set/4, set/5, refresh_ttl/4]).
 -export([test_and_set/5, test_and_set/6]).
 -export([get/3, ls/3]).
 -export([delete/3]).
 -export([watch/3, watch/4]).
 -export([sadd/4, sadd/5, sdel/4, sismember/4, smembers/3]).
 -compile(export_all).
--include("etcd_types.hrl").
+-include("include/etcd_types.hrl").
 
 %% @doc Start application with all depencies
 -spec start() -> ok | {error, term()}.
@@ -50,7 +50,18 @@ set(Url, Key, Value, Timeout) ->
 set(Url, Key, Value, TTL, Timeout) ->
     FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
     Result = put_request(FullUrl, [{"value", Value}, {"ttl", TTL}], Timeout),
-%%    io:format("~p~n~p~n", [FullUrl, Result]),
+    handle_request_result(Result).
+
+%% @spec (Url, Key, TTL, Timeout) -> Result
+%%   Url = string()
+%%   Key = binary() | string()
+%%   TTL = pos_integer()
+%%   Timeout = pos_integer() | infinity
+%%   Result = {ok, response() | [response()]} | {http_error, atom()}.
+%% @end
+refresh_ttl(Url, Key, TTL, Timeout) ->
+    FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
+    Result = put_request(FullUrl, [{"ttl", TTL}, {"refresh", "true"}], Timeout),
     handle_request_result(Result).
 
 %% @spec (Url, Key, PrevValue, Value, Timeout) -> Result
