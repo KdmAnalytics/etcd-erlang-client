@@ -308,7 +308,7 @@ parse_delete_response([Pair | Tail], Acc) ->
 %% @private
 handle_request_result(Result) ->
     case Result of
-        {ok, {{Code, _ReasonPhrase}, _Hdrs, ResponseBody}} when Code < <<"300">> ->
+        {ok, {{Code, _ReasonPhrase}, _Hdrs, ResponseBody}} when Code < 300 ->
             Decoded = jsx:decode(ResponseBody),
             {ok, parse_response(Decoded)};
         {_, Reason} ->
