@@ -1,13 +1,13 @@
 -module(etcd).
 
 -export([start/0, stop/0]).
--export([set/4, set/5]).
+-export([set/4, set/5, refresh_ttl/4]).
 -export([test_and_set/5, test_and_set/6]).
--export([get/3]).
+-export([get/3, ls/3]).
 -export([delete/3]).
 -export([watch/3, watch/4]).
 -export([sadd/4, sadd/5, sdel/4, sismember/4, smembers/3]).
-
+-compile(export_all).
 -include("include/etcd_types.hrl").
 
 %% @doc Start application with all depencies
@@ -50,6 +50,18 @@ set(Url, Key, Value, Timeout) ->
 set(Url, Key, Value, TTL, Timeout) ->
     FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
     Result = put_request(FullUrl, [{"value", Value}, {"ttl", TTL}], Timeout),
+    handle_request_result(Result).
+
+%% @spec (Url, Key, TTL, Timeout) -> Result
+%%   Url = string()
+%%   Key = binary() | string()
+%%   TTL = pos_integer()
+%%   Timeout = pos_integer() | infinity
+%%   Result = {ok, response() | [response()]} | {http_error, atom()}.
+%% @end
+refresh_ttl(Url, Key, TTL, Timeout) ->
+    FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
+    Result = put_request(FullUrl, [{"ttl", TTL}, {"refresh", "true"}], Timeout),
     handle_request_result(Result).
 
 %% @spec (Url, Key, PrevValue, Value, Timeout) -> Result
@@ -103,6 +115,11 @@ get(Url, Key, Timeout) ->
 delete(Url, Key, Timeout) ->
     FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key),
     Result = lhttpc:request(FullUrl, delete, [], Timeout),
+    handle_request_result(Result).
+
+ls(Url, Key, Timeout) ->
+    FullUrl = url_prefix(Url) ++ "/keys" ++ convert_to_string(Key) ++ "?quorum=false&recursive=true&sorted=false",
+    Result = lhttpc:request(FullUrl, get, [], Timeout),
     handle_request_result(Result).
 
 %% @spec (Url, Key, Timeout) -> Result
@@ -174,10 +191,7 @@ do_request(Method, Url, Pairs, Timeout) ->
     lhttpc:request(Url, Method, Headers, Body, Timeout).
 
 %% @private
-parse_response(Decoded) when is_list(Decoded) ->
-    [ parse_response_inner(Pairs) || {Pairs} <- Decoded ];
-parse_response(Decoded) when is_tuple(Decoded) ->
-    {Pairs} = Decoded,
+parse_response(Pairs) when is_list(Pairs) ->
     IsError = lists:keyfind(<<"errorCode">>, 1, Pairs),
     case IsError of
         {_, ErrorCode} ->
@@ -195,6 +209,8 @@ parse_response_inner(Pairs) ->
             parse_set_response(Pairs, #set{});
         <<"get">> ->
             parse_get_response(Pairs, #get{});
+        <<"expire">> ->
+            parse_delete_response(Pairs, #delete{});
         <<"delete">> ->
             parse_delete_response(Pairs, #delete{})
     end.
@@ -226,7 +242,7 @@ parse_node_response([Pair | Tail], #node{} = Acc) ->
             parse_node_response(Tail, Acc#node{dir = IsDir});
         {<<"nodes">>, Nodes} ->
             parse_node_response(Tail,
-                Acc#node{nodes = [ parse_node_response(N) || {N} <- Nodes ]});
+                Acc#node{nodes = [ parse_node_response(N) || N <- Nodes ]});
         {<<"value">>, Value} ->
             parse_node_response(Tail, Acc#node{value = Value});
         {<<"modifiedIndex">>, Index} ->
@@ -242,13 +258,13 @@ parse_set_response([], Acc) ->
     Acc;
 parse_set_response([Pair | Tail], Acc) ->
     case Pair of
-        {<<"node">>, {NodePairs}} ->
+        {<<"node">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_set_response(Tail, Acc#set{key = N#node.key,
                                              value = N#node.value,
                                              newKey = true,
                                              index = N#node.modifiedIndex});
-        {<<"prevNode">>, {NodePairs}} ->
+        {<<"prevNode">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_set_response(Tail, Acc#set{key = N#node.key,
                                              prevValue = N#node.value,
@@ -262,7 +278,7 @@ parse_get_response([], Acc) ->
     Acc;
 parse_get_response([Pair | Tail], Acc) ->
     case Pair of
-        {<<"node">>, {NodePairs}} ->
+        {<<"node">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_get_response(Tail, Acc#get{key = N#node.key,
                                              dir = N#node.dir,
@@ -278,11 +294,11 @@ parse_delete_response([], Acc) ->
     Acc;
 parse_delete_response([Pair | Tail], Acc) ->
     case Pair of
-        {<<"node">>, {NodePairs}} ->
+        {<<"node">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_delete_response(Tail, Acc#delete{key = N#node.key,
                                                    index = N#node.modifiedIndex});
-        {<<"prevNode">>, {NodePairs}} ->
+        {<<"prevNode">>, NodePairs} ->
             N = parse_node_response(NodePairs),
             parse_delete_response(Tail, Acc#delete{prevValue = N#node.value});
         _ ->
@@ -292,10 +308,10 @@ parse_delete_response([Pair | Tail], Acc) ->
 %% @private
 handle_request_result(Result) ->
     case Result of
-        {ok, {{_StatusCode, _ReasonPhrase}, _Hdrs, ResponseBody}} ->
-            Decoded = jiffy:decode(ResponseBody),
+        {ok, {{Code, _ReasonPhrase}, _Hdrs, ResponseBody}} when Code < 300 ->
+            Decoded = jsx:decode(ResponseBody),
             {ok, parse_response(Decoded)};
-        {error, Reason} ->
+        {_, Reason} ->
             {http_error, Reason}
     end.
 
